@@ -73,7 +73,22 @@ func patchSparkPod(pod *corev1.Pod, app *v1beta1.SparkApplication) []patchOperat
 		}
 	}
 
-	op = addSecurityContext(pod, app)
+	op = addPodSecurityContext(pod, app)
+	if op != nil {
+		patchOps = append(patchOps, *op)
+	}
+
+	op = addContainerSecurityContext(pod, app)
+	if op != nil {
+		patchOps = append(patchOps, *op)
+	}
+
+	op = overrideAnn(pod, app)
+	if op != nil {
+		patchOps = append(patchOps, *op)
+	}
+
+	op = overrideNamespace(pod, app)
 	if op != nil {
 		patchOps = append(patchOps, *op)
 	}
@@ -360,7 +375,7 @@ func addToleration(pod *corev1.Pod, toleration corev1.Toleration) patchOperation
 	return patchOperation{Op: "add", Path: path, Value: value}
 }
 
-func addSecurityContext(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOperation {
+func addPodSecurityContext(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOperation {
 	var secContext *corev1.PodSecurityContext
 	if util.IsDriverPod(pod) {
 		secContext = app.Spec.Driver.SecurityContenxt
@@ -371,8 +386,61 @@ func addSecurityContext(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOp
 	if secContext == nil {
 		return nil
 	}
-	return &patchOperation{Op: "add", Path: "/spec/securityContext", Value: *secContext}
+	return &patchOperation{Op: "replace", Path: "/spec/securityContext", Value: *secContext}
 }
+
+func addContainerSecurityContext(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOperation {
+	var secContext *corev1.SecurityContext
+
+	cons := pod.Spec.Containers
+
+	if util.IsDriverPod(pod) {
+		secContext = app.Spec.Driver.DriverSecurityContenxt
+
+
+		//caps := secContext.Capabilities
+		//var val = make([]corev1.Capability,1)
+		//val[0] = "KILL"
+		//caps.Drop = val
+		//secContext.Capabilities.Drop = caps.Drop
+		if secContext != nil {
+			cons[0].SecurityContext = secContext
+			return &patchOperation{Op: "replace", Path: "/spec/containers", Value: cons}
+		}
+
+	} else if util.IsExecutorPod(pod) {
+		secContext = app.Spec.Executor.ExecutorSecurityContenxt
+		//caps := secContext.Capabilities
+		//var val = make([]corev1.Capability,1)
+		//val[0] = "KILL"
+		//caps.Drop = val
+		//secContext.Capabilities.Drop = caps.Drop
+
+		if secContext != nil {
+			cons[0].SecurityContext = secContext
+			return &patchOperation{Op: "replace", Path: "/spec/containers", Value: cons}
+		}
+	}
+
+	return nil
+}
+
+func overrideAnn(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOperation {
+	o := pod.ObjectMeta.Annotations
+	o["openshift.io/scc"] = "scc-test"
+
+	return &patchOperation{Op: "replace", Path: "/metadata/annotations", Value: o}
+}
+
+
+func overrideNamespace(pod *corev1.Pod, app *v1beta1.SparkApplication) *patchOperation {
+	var (
+		r = "spark"
+	)
+
+	return &patchOperation{Op: "add", Path: "/metadata/namespace", Value: r}
+}
+
 
 func addSidecarContainers(pod *corev1.Pod, app *v1beta1.SparkApplication) []patchOperation {
 	var sidecars []corev1.Container

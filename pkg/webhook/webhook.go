@@ -262,6 +262,7 @@ func mutatePods(
 
 	raw := review.Request.Object.Raw
 	pod := &corev1.Pod{}
+
 	if err := json.Unmarshal(raw, pod); err != nil {
 		glog.Errorf("failed to unmarshal a Pod from the raw data in the admission request: %v", err)
 		return toAdmissionResponse(err)
@@ -270,6 +271,8 @@ func mutatePods(
 	response := &admissionv1beta1.AdmissionResponse{Allowed: true}
 
 	if !isSparkPod(pod) || !inSparkJobNamespace(review.Request.Namespace, sparkJobNs) {
+		glog.V(2).Infof("NOT PATCHED pod spec:%s", pod.Spec.String())
+		glog.V(2).Infof( "NOT PATCHED ObjectMeta:%s", pod.ObjectMeta.String())
 		glog.V(2).Infof("Pod %s in namespace %s is not subject to mutation", pod.GetObjectMeta().GetName(), review.Request.Namespace)
 		return response
 	}
@@ -280,11 +283,14 @@ func mutatePods(
 		return response
 	}
 	app, err := lister.SparkApplications(review.Request.Namespace).Get(appName)
+
 	if err != nil {
 		glog.Errorf("failed to get SparkApplication %s/%s: %v", review.Request.Namespace, appName, err)
 		return toAdmissionResponse(err)
 	}
 
+	glog.V(2).Info("app namespace: %s", app.GetObjectMeta().GetNamespace())
+	glog.V(2).Infof("PRE-PATCH security context:%s", app.Spec.Driver.SecurityContenxt.String())
 	patchOps := patchSparkPod(pod, app)
 	if len(patchOps) > 0 {
 		glog.V(2).Infof("Pod %s in namespace %s is subject to mutation", pod.GetObjectMeta().GetName(), review.Request.Namespace)
@@ -296,6 +302,12 @@ func mutatePods(
 		response.Patch = patchBytes
 		patchType := admissionv1beta1.PatchTypeJSONPatch
 		response.PatchType = &patchType
+
+		s := string(patchBytes)
+
+		glog.V(2).Infof("PRE-PATCH pod spec:%s", pod.Spec.String())
+		glog.V(2).Infof( "PRE-PATCH ObjectMeta:%s", pod.ObjectMeta.String())
+		glog.V(2).Infof("PATCH OPS Object:%s", s)
 	}
 
 	return response
