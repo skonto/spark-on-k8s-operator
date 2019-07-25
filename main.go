@@ -28,6 +28,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
 	"strings"
@@ -37,26 +38,24 @@ import (
 	ssacrd "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/crd/scheduledsparkapplication"
 	sacrd "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/crd/sparkapplication"
 	"github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/util"
+	wb "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/webhook"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	// +kubebuilder:scaffold:imports
 )
 
 var (
-	installCRDs          = flag.Bool("install-crds", true, "Whether to install CRDs")
-	controllerThreads    = flag.Int("controller-threads", 10, "Number of worker threads used by the SparkApplication controller.")
-	resyncInterval       = flag.Int("resync-interval", 30, "Informer resync interval in seconds.")
-	namespace            = flag.String("namespace", apiv1.NamespaceAll, "The Kubernetes namespace(s) to manage. Will manage custom resource objects of the managed CRD types for the whole cluster if unset. Multiple namespace can be seperated with comma.")
-	enableWebhook        = flag.Bool("enable-webhook", false, "Whether to enable the mutating admission webhook for admitting and patching Spark pods.")
-	webhookConfigName    = flag.String("webhook-config-name", "spark-webhook-config", "The name of the MutatingWebhookConfiguration object to create.")
-	webhookCertDir       = flag.String("webhook-cert-dir", "/etc/webhook-certs", "The directory where x509 certificate and key files are stored.")
-	webhookSvcNamespace  = flag.String("webhook-svc-namespace", "spark-operator", "The namespace of the Service for the webhook server.")
-	webhookSvcName       = flag.String("webhook-svc-name", "spark-webhook", "The name of the Service for the webhook server.")
-	webhookPort          = flag.Int("webhook-port", 8080, "Service port of the webhook server.")
-	enableMetrics        = flag.Bool("enable-metrics", false, "Whether to enable the metrics endpoint.")
-	enableLeaderElection = flag.Bool("enable-leader-election", false, "Whether to enable leader election.")
-	metricsPort          = flag.String("metrics-port", "10254", "Port for the metrics endpoint.")
-	metricsEndpoint      = flag.String("metrics-endpoint", "/metrics", "Metrics endpoint.")
-	metricsPrefix        = flag.String("metrics-prefix", "", "Prefix for the metrics.")
-	ingressUrlFormat     = flag.String("ingress-url-format", "", "Ingress URL format.")
+	installCRDs       = flag.Bool("install-crds", true, "Whether to install CRDs")
+	controllerThreads = flag.Int("controller-threads", 10, "Number of worker threads used by the SparkApplication controller.")
+	resyncInterval    = flag.Int("resync-interval", 30, "Informer resync interval in seconds.")
+	namespace         = flag.String("namespace", apiv1.NamespaceAll, "The Kubernetes namespace(s) to manage. Will manage custom resource objects of the managed CRD types for the whole cluster if unset. Multiple namespace can be seperated with comma.")
+	enableWebhook     = flag.Bool("enable-webhook", false, "Whether to enable the mutating admission webhook for admitting and patching Spark pods.")
+	enableMetrics     = flag.Bool("enable-metrics", false, "Whether to enable the metrics endpoint.")
+	metricsPort       = flag.String("metrics-port", "10254", "Port for the metrics endpoint.")
+	metricsEndpoint   = flag.String("metrics-endpoint", "/metrics", "Metrics endpoint.")
+	metricsPrefix     = flag.String("metrics-prefix", "", "Prefix for the metrics.")
+	ingressUrlFormat  = flag.String("ingress-url-format", "", "Ingress URL format.")
+	setupLog          = ctrl.Log.WithName("setup")
 )
 
 func main() {
@@ -85,17 +84,12 @@ func main() {
 		util.InitializeMetrics(metricConfig)
 	}
 
-	glog.Info("Starting the Spark Operator")
+	ctrl.SetLogger(zap.Logger(true))
+	setupLog.Info("Starting the Spark Operator")
 
-	//stopCh := make(chan struct{})
-
-	//crClient, err := crclientset.NewForConfig(config)
-	//if err != nil {
-	//	glog.Fatal(err)
-	//}
 	apiExtensionsClient, err := apiextensionsclient.NewForConfig(config)
 	if err != nil {
-		glog.Fatal(err)
+		setupLog.Error(err, "Unable to get a client")
 	}
 
 	if *installCRDs {
@@ -133,7 +127,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	glog.Info("Registering Components.")
+	setupLog.Info("Registering Components.")
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
@@ -142,91 +136,30 @@ func main() {
 	}
 
 	// Setup all Controllers
-	glog.Info("Adding Controllers.")
+	setupLog.Info("Adding Controllers.")
 	if err := controller.AddToManager(mgr, metricConfig); err != nil {
-		glog.Error(err, "Unable toadd the controllers")
+		glog.Error(err, "Unable to add the controllers")
 		os.Exit(1)
 	}
 
-	//glog.Info("Setting up webhooks")
-	//if err := webhook.AddToManager(mgr); err != nil {
-	//	glog.Error(err, "unable to register webhooks to the manager")
-	//	os.Exit(1)
-	//}
+	if *enableWebhook {
+		setupLog.Info("Setting up webhooks")
+		if err := wb.AddToManager(mgr); err != nil {
+			glog.Error(err, "unable to register webhooks to the manager")
+			os.Exit(1)
+		}
+
+		// +kubebuilder:scaffold:builder
+
+		setupLog.Info("Getting the webhook server")
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/mutate-v1-pod", &webhook.Admission{Handler: &wb.SparkPodMutator{JobNameSpace: *namespace}})
+	}
 
 	//Start the Cmd
-	glog.Info("Starting the Cmd.")
+	setupLog.Info("Starting the Cmd.")
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
 		glog.Error(err, "unable to run the manager")
 		os.Exit(1)
 	}
-	//crInformerFactory := buildCustomResourceInformerFactory(crClient)
-	//podInformerFactory := buildPodInformerFactory(kubeClient)
-	//applicationController := sparkapplication.NewController(
-	//	crClient, kubeClient, crInformerFactory, podInformerFactory, metricConfig, *namespace, *ingressUrlFormat)
-	//scheduledApplicationController := scheduledsparkapplication.NewController(
-	//	crClient, kubeClient, apiExtensionsClient, crInformerFactory, clock.RealClock{})
-	//
-	//// Start the informer factory that in turn starts the informer.
-	//go crInformerFactory.Start(stopCh)
-	//go podInformerFactory.Start(stopCh)
-	//
-	//if err = applicationController.Start(*controllerThreads, stopCh); err != nil {
-	//	glog.Fatal(err)
-	//}
-	//if err = scheduledApplicationController.Start(*controllerThreads, stopCh); err != nil {
-	//	glog.Fatal(err)
-	//}
-
-	//var hook *webhook.WebHook
-	//if *enableWebhook {
-	//	var err error
-	//	hook, err = webhook.New(kubeClient, crInformerFactory, *webhookCertDir, *webhookSvcNamespace, *webhookSvcName, *webhookPort, *namespace)
-	//	if err != nil {
-	//		glog.Fatal(err)
-	//	}
-	//
-	//	if err = hook.Start(*webhookConfigName); err != nil {
-	//		glog.Fatal(err)
-	//	}
-	//}
-
-	//signalCh := make(chan os.Signal, 1)
-	//signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
-	//<-signalCh
-	//
-	//close(stopCh)
-	//
-	//glog.Info("Shutting down the Spark Operator")
-	//applicationController.Stop()
-	//scheduledApplicationController.Stop()
-	//if *enableWebhook {
-	//	if err := hook.Stop(*webhookConfigName); err != nil {
-	//		glog.Fatal(err)
-	//	}
-	//}
 }
-
-//func buildCustomResourceInformerFactory(crClient crclientset.Interface) crinformers.SharedInformerFactory {
-//	var factoryOpts []crinformers.SharedInformerOption
-//	if *namespace != apiv1.NamespaceAll {
-//		factoryOpts = append(factoryOpts, crinformers.WithNamespace(*namespace))
-//	}
-//	return crinformers.NewSharedInformerFactoryWithOptions(
-//		crClient,
-//		// resyncPeriod. Every resyncPeriod, all resources in the cache will re-trigger events.
-//		time.Duration(*resyncInterval)*time.Second,
-//		factoryOpts...)
-//}
-//
-//func buildPodInformerFactory(kubeClient clientset.Interface) informers.SharedInformerFactory {
-//	var podFactoryOpts []informers.SharedInformerOption
-//	if *namespace != apiv1.NamespaceAll {
-//		podFactoryOpts = append(podFactoryOpts, informers.WithNamespace(*namespace))
-//	}
-//	tweakListOptionsFunc := func(options *metav1.ListOptions) {
-//		options.LabelSelector = fmt.Sprintf("%s,%s", operatorConfig.SparkRoleLabel, operatorConfig.LaunchedBySparkOperatorLabel)
-//	}
-//	podFactoryOpts = append(podFactoryOpts, informers.WithTweakListOptions(tweakListOptionsFunc))
-//	return informers.NewSharedInformerFactoryWithOptions(kubeClient, time.Duration(*resyncInterval)*time.Second, podFactoryOpts...)
-//}

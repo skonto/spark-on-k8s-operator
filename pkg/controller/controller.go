@@ -24,7 +24,7 @@ import (
 var AddToManagerFuncs []func(manager.Manager, *util.MetricConfig) error
 
 // AddToManager adds all Controllers to the Manager
-func AddToManager( m manager.Manager, mc *util.MetricConfig) error {
+func AddToManager(m manager.Manager, mc *util.MetricConfig) error {
 	for _, f := range AddToManagerFuncs {
 		if err := f(m, mc); err != nil {
 			return err
@@ -32,4 +32,3 @@ func AddToManager( m manager.Manager, mc *util.MetricConfig) error {
 	}
 	return nil
 }
-

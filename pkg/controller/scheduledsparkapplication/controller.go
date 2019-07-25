@@ -50,7 +50,6 @@ import (
 	"github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/config"
 )
 
-
 // Add creates a new ScheduledSparkApplication Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager, metricsConfig *util.MetricConfig) error {
@@ -69,10 +68,10 @@ func newReconciler(mgr manager.Manager, metricsConfig *util.MetricConfig) reconc
 // ReconcileSparkApplication reconciles a SparkApplication object
 type ReconcileScheduledSparkApplication struct {
 	client.Client
-	scheme  *runtime.Scheme
+	scheme *runtime.Scheme
 }
 
-func (r * ReconcileScheduledSparkApplication) Reconcile(reconcile.Request) (reconcile.Result, error) {
+func (r *ReconcileScheduledSparkApplication) Reconcile(reconcile.Request) (reconcile.Result, error) {
 	panic("implement me")
 }
 
@@ -94,7 +93,6 @@ type Controller struct {
 	saLister         crdlisters.SparkApplicationLister
 	clock            clock.Clock
 }
-
 
 func NewController(
 	crdClient crdclientset.Interface,
