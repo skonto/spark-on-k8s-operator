@@ -3,13 +3,13 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
-  name: spark-on-k8s-operator-system
+  name: sparkoperator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: spark-on-k8s-operator-leader-election-role
-  namespace: spark-on-k8s-operator-system
+  namespace: sparkoperator
 rules:
 - apiGroups:
   - ""
@@ -164,7 +164,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: spark-on-k8s-operator-leader-election-rolebinding
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -172,7 +172,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -185,7 +185,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -198,7 +198,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 ---
 apiVersion: v1
 kind: Service
@@ -210,7 +210,7 @@ metadata:
   labels:
     control-plane: controller-manager
   name: spark-on-k8s-operator-controller-manager-metrics-service
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 spec:
   ports:
   - name: https
@@ -223,7 +223,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: spark-on-k8s-operator-webhook-service
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 spec:
   ports:
   - port: 443
@@ -237,7 +237,7 @@ metadata:
   labels:
     control-plane: controller-manager
   name: spark-on-k8s-operator-controller-manager
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 spec:
   replicas: 1
   selector:
@@ -263,7 +263,6 @@ spec:
           name: https
       - args:
         - --metrics-addr=127.0.0.1:8080
-        - --enable-leader-election
         - --logtostderr
         - --v=4
         - --enable-webhook=true
@@ -300,11 +299,11 @@ apiVersion: certmanager.k8s.io/v1alpha1
 kind: Certificate
 metadata:
   name: spark-on-k8s-operator-serving-cert
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 spec:
-  commonName: spark-on-k8s-operator-webhook-service.spark-on-k8s-operator-system.svc
+  commonName: spark-on-k8s-operator-webhook-service.sparkoperator.svc
   dnsNames:
-  - spark-on-k8s-operator-webhook-service.spark-on-k8s-operator-system.svc.cluster.local
+  - spark-on-k8s-operator-webhook-service.sparkoperator.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: spark-on-k8s-operator-selfsigned-issuer
@@ -314,6 +313,6 @@ apiVersion: certmanager.k8s.io/v1alpha1
 kind: Issuer
 metadata:
   name: spark-on-k8s-operator-selfsigned-issuer
-  namespace: spark-on-k8s-operator-system
+  namespace:sparkoperator
 spec:
   selfSigned: {}

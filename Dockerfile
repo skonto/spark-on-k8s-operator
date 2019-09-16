@@ -16,8 +16,8 @@
 
 ARG SPARK_IMAGE=gcr.io/spark-operator/spark:v2.4.0
 
-FROM golang:1.12.5-alpine as builder
-ARG DEP_VERSION="0.5.3"
+FROM golang:1.12.9-alpine as builder
+ARG DEP_VERSION="0.5.4"
 RUN apk add --no-cache bash git
 
 WORKDIR /tmp/github.com/GoogleCloudPlatform/spark-on-k8s-operator
